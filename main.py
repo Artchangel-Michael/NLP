@@ -1,163 +1,142 @@
+from torch import nn
 import torch
-class Value:
-    """ stores a single scalar value and its gradient """
+import numpy as np
 
-    def __init__(self, data, _children=(), _op=''):
-        self.data = data
-        self.grad = 0.0
-        self._backward = lambda: None
-        self._prev = set(_children)
-        self._op = _op
+#Задание 1
+net_seq = nn.Sequential(
+    nn.Linear(in_features=3, out_features=5),
+    nn.Sigmoid(),
+    nn.Linear(in_features=5, out_features=2),
+)
+if torch.cuda.is_available():
+  device = 'cuda:0'
+else:
+  device = 'cpu'
+net_seq.to(device)
+lin1 = nn.Linear(in_features=3, out_features = 5)
+lin2 = nn.Linear(in_features=5, out_features = 2)
+print(lin1.weight, lin1.bias)
+print(lin2.weight, lin2.bias)
 
-    def __add__(self, other):
-        other = other if isinstance(other, Value) else Value(other)
-        out = Value(self.data + other.data, (self, other), '+')
+#Общее количество обучаемых параметров = 32
+#В первом слое количество весов 5*3, а смещений 5
+#Во втором слое количество весов 2*5, а смещений 2
 
-        def _backward():
-            self.grad += 1.0 * out.grad
-            other.grad += 1.0 * out.grad
-        out._backward = _backward
+class Model(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(in_features=3, out_features=5)
+        self.fc2 = nn.Linear(in_features=5, out_features=2)
 
-        return out
+    def forward(self, x):
+        x = self.fc1(x)
+        return F.sigmoid(self.fc2(x))
 
-    def __mul__(self, other):
-        other = other if isinstance(other, Value) else Value(other)
-        out = Value(self.data * other.data, (self, other), '*')
+net_model = Model()
+net_model.to(device)
+net_model
+#Количество обучаемых параметров такое же, как и у класса net_seq
 
-        def _backward():
-            self.grad += other.data * out.grad
-            other.grad += self.data * out.grad
-        out._backward = _backward
+#Задание 2
+class NeuronNOT(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc = torch.nn.Linear(1, 1)
 
-        return out
-
-    def __pow__(self, other):
-        assert isinstance(other, (int, float)), "only supporting int/float powers for now"
-        out = Value(self.data ** other, (self,), '^')
-
-        def _backward():
-            self.grad += (other * self.data ** (other - 1)) * out.grad
-        out._backward = _backward
-
-        return out
-
-    def relu(self):
-        out = Value(max(0.0, self.data), (self,), 'ReLU')
-
-        def _backward():
-            if self.data > 0.0:
-              self.grad +=  1.0 * out.grad
-            else:
-              self.grad += 0.0 * out.grad
-        out._backward = _backward
-
-        return out
-
-    def backward(self):
-        topo = []
-        visited = set()
-        def build_topo(v):
-            if v not in visited:
-                visited.add(v)
-                for child in v._prev:
-                    build_topo(child)
-                topo.append(v)
-        build_topo(self)
-
-        self.grad = 1.0
-        for v in reversed(topo):
-            v._backward()
-
-    def __neg__(self): return self * -1.0
-    def __radd__(self, other): return self + other
-    def __sub__(self, other): return self + (-other)
-    def __rsub__(self, other): return other + (-self)
-    def __rmul__(self, other): return self * other
-    def __truediv__(self, other): return self * other**-1
-    def __rtruediv__(self, other): return other * self**-1
-
-    def __repr__(self):
-        return f"Value(data={self.data}, grad={self.grad})"
+    def forward(self, x):
+        return torch.heaviside(self.fc(x), torch.tensor([0.0]))
     
-def test_sanity_check():
-
-    x = Value(-4.0)
-    z = 2 * x + 2 + x
-
-    q = z.relu() + z * x
-    h = (z * z).relu()
-    y = h + q + q * x
-    y.backward()
-    xmg, ymg = x, y
-
-    x = torch.Tensor([-4.0]).double()
-    x.requires_grad = True
-    z = 2 * x + 2 + x
-    q = z.relu() + z * x
-    h = (z * z).relu()
-    y = h + q + q * x
-    y.backward()
-    xpt, ypt = x, y
+neuronNOT = NeuronNOT()
+neuronNOT.fc.weight, neuronNOT.fc.bias
+neuronNOT.fc.weight.data = torch.tensor([[-0.5]])
+neuronNOT.fc.bias.data = torch.tensor([0.5])
+x0 = torch.tensor([[0.],
+                 [1.]])
+print(neuronNOT(x0))
 
 
-    # forward pass went well
-    assert ymg.data == ypt.data.item()
-    # backward pass went well
-    print(xmg, xpt, xpt.grad)
-    assert xmg.grad == xpt.grad.item()
+
+#Задание 3
+class NeuronAND(torch.nn.Module):
+  def __init__(self):
+    super().__init__()
+    self.fc = torch.nn.Linear(2, 1)
+
+  def forward(self, x):
+    return torch.heaviside(self.fc(x), torch.tensor([0.0]))
+  
+neuronAND = NeuronAND()
+neuronAND.fc.weight, neuronAND.fc.bias
+
+neuronAND.fc.weight.data = torch.tensor([[0.5, 0.5]])
+neuronAND.fc.bias.data = torch.tensor([-0.9])
+
+x = torch.tensor([[0.0, 0.0],
+                 [0.0, 1.0],
+                 [1.0, 0.0],
+                 [1.0, 1.0]])
+print(neuronAND(x))
 
 
-def test_more_ops():
+#Задание 4
+class NeuronOR(torch.nn.Module):
+  def __init__(self):
+    super().__init__()
+    self.fc = torch.nn.Linear(2, 1)
 
-    a = Value(-4.0)
-    b = Value(2.0)
-    c = a + b
-    d = a * b + b**3
-    c += c + 1
-    c += 1 + c + (-a)
-    d += d * 2 + (b + a).relu()
-    d += 3 * d + (b - a).relu()
-    e = c - d
-    f = e**2
-    g = f / 2.0
-    g += 10.0 / f
-    g.backward()
-    amg, bmg, gmg = a, b, g
+  def forward(self, x):
+    return torch.heaviside(self.fc(x), torch.tensor([0.0]))
+neuronOR = NeuronOR()
+neuronOR.fc.weight, neuronOR.fc.bias
 
-    a = torch.Tensor([-4.0]).double()
-    b = torch.Tensor([2.0]).double()
-    a.requires_grad = True
-    b.requires_grad = True
-    c = a + b
-    d = a * b + b**3
-    c = c + c + 1
-    c = c + 1 + c + (-a)
-    d = d + d * 2 + (b + a).relu()
-    d = d + 3 * d + (b - a).relu()
-    e = c - d
-    f = e**2
-    g = f / 2.0
-    g = g + 10.0 / f
-    g.backward()
-    apt, bpt, gpt = a, b, g
+neuronOR.fc.weight.data = torch.tensor([[0.5, 0.5]])
+neuronOR.fc.bias.data = torch.tensor([-0.4])
 
-    tol = 1e-6
-    # forward pass went well
-    assert abs(gmg.data - gpt.data.item()) < tol
-    # backward pass went well
-    assert abs(amg.grad - apt.grad.item()) < tol
-    assert abs(bmg.grad - bpt.grad.item()) < tol
+print(neuronOR(x))
 
-if __name__ == "__main__":
-    a = Value(-4.0)
-    b = Value(2.0)
-    d = Value(3.0)
+#Задание 5
+class NeuronXOR(torch.nn.Module):
+    def __init__(self):  
+        super().__init__()
+        self.hidden = nn.Linear(2, 2)
+        self.output = nn.Linear(2, 1)
 
-    c = a + b
-    e = c * d
-    e.backward()
+        self.hidden.weight.data = torch.tensor([[0.5, 0.5],   # OR
+                                                [-0.5, -0.5]]) # NOT AND
+        self.hidden.bias.data = torch.tensor([-0.4, 0.9])
+
+        self.output.weight.data = torch.tensor([[0.5, 0.5]])  # AND
+        self.output.bias.data = torch.tensor([-0.9])
+
+    def forward(self, x):
+        h = torch.heaviside(self.hidden(x), torch.tensor([0.0]))
+        y = torch.heaviside(self.output(h), torch.tensor([0.0]))
+        return y
+
+neuronXOR = NeuronXOR()
+print(neuronXOR(x))
 
 
-    test_sanity_check()
+#Задание 6
+class Neuron(torch.nn.Module):
+  def __init__(self):
+    super().__init__()
+    self.fc = torch.nn.Linear(2, 1)
 
-    test_more_ops()
+  def forward(self, x):
+    return torch.heaviside(self.fc(x), torch.tensor([0.0]))
+
+# x = torch.tensor([[0.0, 0.0]])
+neuron = Neuron()
+neuron.fc.weight, neuron.fc.bias
+neuron.fc.weight.data = torch.tensor([[-0.5, -0.5]])
+neuron.fc.bias.data = torch.tensor([1.0])
+n1 = neuron(x)
+neuron.fc.weight.data = torch.tensor([[0.5, 0.5]])
+neuron.fc.bias.data = torch.tensor([-0.4])
+n2= neuron(x)
+neuron.fc.weight.data = torch.tensor([[0.5, 0.5]])
+neuron.fc.bias.data = torch.tensor([-0.9])
+output_ns = torch.stack((n1, n2), dim = 1)
+inp_n3 = torch.squeeze(output_ns, dim = 2)
+print(neuron(inp_n3))
