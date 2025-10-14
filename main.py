@@ -1,2 +1,1 @@
-import torch
-print("1")
+print(','.join(["Hello", "gey!"]))
