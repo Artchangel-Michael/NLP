@@ -157,7 +157,7 @@ if __name__ == "__main__":
     e = c * d
     e.backward()
 
+
     test_sanity_check()
 
     test_more_ops()
-    print('1')
