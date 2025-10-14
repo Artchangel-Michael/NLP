@@ -37,7 +37,7 @@ repos:
         additional_dependencies:
           - types-requests
           - types-PyYAML
-          - torch  # для типов PyTorch
+          - torch  
 
   - repo: https://github.com/pycqa/pydocstyle
     rev: 6.3.0
